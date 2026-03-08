@@ -1,0 +1,241 @@
+/* =============================================================
+   NotebookLM Source Cleaner — 注入样式 v6
+   极致克制：贴近原生 Material Design 3 深色美学
+   ============================================================= */
+
+/* ── 批量工具条容器（去除外衣，仅保留布局） ──────────────────────── */
+#nlm-bulk-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  justify-content: flex-start;
+  margin-bottom: 16px;
+  padding: 0 4px;
+  background: transparent;
+  border: none;
+}
+
+/* ── 批量模式开关按鈕 ─────────────────────────────────────────── */
+#nlm-bulk-toggle-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.85);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  white-space: nowrap;
+}
+
+#nlm-bulk-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+#nlm-bulk-toggle-btn.active {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+#nlm-bulk-toggle-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── 删除选中按鈕 ───────────────────────────────────────────────────── */
+#nlm-bulk-delete-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 36px;
+  padding: 0 16px;
+  border: none;
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 13px;
+  font-weight: 500;
+  font-family: inherit;
+  cursor: not-allowed;
+  transition: background 0.2s ease, color 0.2s ease;
+  white-space: nowrap;
+  opacity: 1;
+}
+
+/* 可用态（有选中项） */
+#nlm-bulk-delete-btn:not(:disabled) {
+  background: rgba(242, 139, 130, 0.15);
+  color: #f28b82;
+  cursor: pointer;
+}
+
+#nlm-bulk-delete-btn:not(:disabled):hover {
+  background: rgba(242, 139, 130, 0.25);
+}
+
+/* disabled 是默认态，不需要额外覆盖 */
+#nlm-bulk-delete-btn:disabled {
+  opacity: 1;
+}
+
+/* ── 已选中数量标签 ───────────────────────────────────────────────────── */
+#nlm-selected-count {
+  flex-shrink: 0;
+  font-size: 12px;
+  font-family: inherit;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.01em;
+}
+
+/* ── 原生级圆形复选框 ─────────────────────────────────────────────────── */
+.nlm-source-checkbox {
+  appearance: none;
+  -webkit-appearance: none;
+  flex-shrink: 0;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  background: transparent;
+  margin-right: 12px;
+  margin-left: 4px;
+  cursor: pointer;
+  position: relative;
+  align-self: center;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.nlm-source-checkbox:hover {
+  border-color: rgba(255, 255, 255, 0.55);
+}
+
+/* 选中态： Google 强调蓝 */
+.nlm-source-checkbox:checked {
+  background: #8ab4f8;
+  border-color: #8ab4f8;
+}
+
+/* 对勾：短横（左下段） */
+.nlm-source-checkbox::after {
+  content: '';
+  display: block;
+  position: absolute;
+  left: 2px;
+  top: 9px;
+  width: 5px;
+  height: 1.5px;
+  background: #202124;
+  border-radius: 1px;
+  transform: rotate(45deg);
+  transform-origin: left center;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+/* 对勾：长竖（右上段） */
+.nlm-source-checkbox::before {
+  content: '';
+  display: block;
+  position: absolute;
+  left: 6px;
+  top: 3px;
+  width: 1.5px;
+  height: 9px;
+  background: #202124;
+  border-radius: 1px;
+  transform: rotate(40deg);
+  transform-origin: bottom center;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+
+.nlm-source-checkbox:checked::after,
+.nlm-source-checkbox:checked::before {
+  opacity: 1;
+}
+
+/* ── 操作进行中的状态提示（Toast） ───────────────────────────────── */
+.nlm-processing-toast {
+  position: fixed;
+  bottom: 24px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 8px 20px;
+  border-radius: 18px;
+  background: rgba(32, 33, 36, 0.96);
+  color: rgba(255, 255, 255, 0.87);
+  font-size: 13px;
+  font-family: inherit;
+  z-index: 99999;
+  pointer-events: none;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.5);
+  animation: nlm-fadein 0.18s ease;
+  white-space: nowrap;
+}
+
+@keyframes nlm-fadein {
+  from { opacity: 0; transform: translateX(-50%) translateY(6px); }
+  to   { opacity: 1; transform: translateX(-50%) translateY(0); }
+}
+
+/* ── 批量删除期间：隐藏原生 CDK Overlay ──────────────────────────────────── */
+body.nlm-is-deleting .cdk-overlay-container,
+body.nlm-is-deleting .cdk-global-overlay-wrapper,
+body.nlm-is-deleting .mat-mdc-dialog-container,
+body.nlm-is-deleting dialog {
+  opacity: 0 !important;
+  pointer-events: none !important;
+  visibility: hidden !important;
+}
+
+/* ── 批量删除进度遮罩层（全屏级） ──────────────────────────────────────────── */
+.nlm-loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(12, 12, 16, 0.88);
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  z-index: 999999;
+  pointer-events: all;
+  color: white;
+}
+
+/* Spinner：旋转圆环 */
+.nlm-loading-spinner {
+  width: 32px;
+  height: 32px;
+  border: 2.5px solid rgba(255, 255, 255, 0.1);
+  border-top-color: #8ab4f8;
+  border-radius: 50%;
+  animation: nlm-spin 0.75s linear infinite;
+  flex-shrink: 0;
+}
+
+@keyframes nlm-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* 进度文字 */
+.nlm-loading-progress {
+  color: rgba(255, 255, 255, 0.75);
+  font-size: 13px;
+  font-weight: 400;
+  font-family: inherit;
+  letter-spacing: 0.02em;
+  text-align: center;
+  white-space: nowrap;
+}
