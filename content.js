@@ -343,10 +343,12 @@ function injectBulkToolbar() {
   }
   const addSourceBtn = sidebar.querySelector(SELECTORS.ADD_SOURCE_AREA);
   if (addSourceBtn) {
-    const anchor = addSourceBtn.closest('div, section, header') || addSourceBtn;
-    anchor.insertAdjacentElement('afterend', createToolbarDOM());
+    // 优先定位原生 .button-row 包裹层，确保工具栏继承相同的水平内边距和对齐上下文
+    const buttonRow = addSourceBtn.closest('.button-row') || addSourceBtn.parentElement || addSourceBtn;
+    buttonRow.insertAdjacentElement('afterend', createToolbarDOM());
     return;
   }
+  // 备用：找不到按鈕时，插入至侧边栏首子节点之前
   sidebar.insertBefore(createToolbarDOM(), sidebar.firstChild);
 }
 

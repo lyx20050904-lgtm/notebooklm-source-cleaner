@@ -141,5 +141,10 @@ NotebookLM-Source-Cleaner/
 
 ## Changelog
 
+**v1.1.1**
+- 🐛 **Fix:** 修正工具栏 DOM 注入锚点，改为精确定位 `.button-row` 父容器，彻底解决工具栏跑到侧边栏顶部的布局偏移问题。
+- 🐛 **Fix:** 消除浅色模式下按钮的蓝色描边（覆盖浏览器及宿主页全局 `outline` / `box-shadow`）。
+- 💄 **Style:** 统一工具栏水平对齐，交由原生父容器处理内边距，去除 CSS 补偿性 `padding`；调整按钮间距与垂直节奏。
+
 **v1.1.0**
-- 🐛 **Fix:** 通过 CSS 变量实现动态主题适配（深色/浅色模式）。修复了 Material Symbols 图标和文字在浅色模式下不可见的问题。（Resolves #1， Thanks to @curiosity654）
+- 🐛 **Fix:** 通过 CSS 变量实现动态主题适配（深色/浅色模式）。修复了 Material Symbols 图标和文字在浅色模式下不可见的问题。（Resolves #1，Thanks to @curiosity654）

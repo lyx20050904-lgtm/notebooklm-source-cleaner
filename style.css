@@ -9,6 +9,7 @@
   --ext-text-muted:            rgba(255, 255, 255, 0.40);
   --ext-bg-idle:               rgba(255, 255, 255, 0.08);
   --ext-bg-hover:              rgba(255, 255, 255, 0.12);
+  --ext-btn-border:            transparent;
   --ext-checkbox-border:       rgba(255, 255, 255, 0.30);
   --ext-checkbox-border-hover: rgba(255, 255, 255, 0.55);
   --ext-danger-text:           #f28b82;
@@ -21,10 +22,11 @@
 /* ── 浅色模式覆盖 ────────────────────────────────────────────── */
 @media (prefers-color-scheme: light) {
   :root {
-    --ext-text-primary:          #202124;
+    --ext-text-primary:          #444746;
     --ext-text-muted:            rgba(0, 0, 0, 0.50);
-    --ext-bg-idle:               rgba(0, 0, 0, 0.05);
-    --ext-bg-hover:              rgba(0, 0, 0, 0.10);
+    --ext-bg-idle:               rgba(0, 0, 0, 0.04);
+    --ext-bg-hover:              rgba(0, 0, 0, 0.08);
+    --ext-btn-border:            rgba(0, 0, 0, 0.12);
     --ext-checkbox-border:       rgba(0, 0, 0, 0.30);
     --ext-checkbox-border-hover: rgba(0, 0, 0, 0.55);
     --ext-danger-text:           #c5221f;
@@ -35,16 +37,34 @@
   }
 }
 
-/* ── 批量工具条容器（去除外衣，仅保留布局） ──────────────────────── */
+/* ── 批量工具条容器 ────────────────────────────────────────────── */
 #nlm-bulk-toolbar {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 12px;
   justify-content: flex-start;
-  margin-bottom: 16px;
-  padding: 0 4px;
+  box-sizing: border-box;
+  width: 100%;
+  /* 父容器（.button-row）已处理左右内边距，此处不需要补偿性 padding */
+  padding: 0;
+  margin-top: 8px;
+  margin-bottom: 8px;
   background: transparent;
   border: none;
+}
+
+/* ── 消除所有追染器 / 页面全局样式对按鈕造成的蓝色描边 ──────── */
+#nlm-bulk-toggle-btn,
+#nlm-bulk-delete-btn {
+  outline: none !important;
+  box-shadow: none !important;
+}
+#nlm-bulk-toggle-btn:focus,
+#nlm-bulk-toggle-btn:focus-visible,
+#nlm-bulk-delete-btn:focus,
+#nlm-bulk-delete-btn:focus-visible {
+  outline: none !important;
+  box-shadow: none !important;
 }
 
 /* ── 批量模式开关按鈕 ─────────────────────────────────────────── */
@@ -54,7 +74,7 @@
   justify-content: center;
   height: 36px;
   padding: 0 16px;
-  border: none;
+  border: 1px solid var(--ext-btn-border);
   border-radius: 18px;
   background: var(--ext-bg-idle);
   color: var(--ext-text-primary);
@@ -87,7 +107,7 @@
   justify-content: center;
   height: 36px;
   padding: 0 16px;
-  border: none;
+  border: 1px solid var(--ext-btn-border);
   border-radius: 18px;
   background: var(--ext-disabled-bg);
   color: var(--ext-disabled-text);
