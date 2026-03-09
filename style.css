@@ -3,6 +3,38 @@
    极致克制：贴近原生 Material Design 3 深色美学
    ============================================================= */
 
+/* ── 语义颜色变量（深色模式默认） ──────────────────────────────── */
+:root {
+  --ext-text-primary:          rgba(255, 255, 255, 0.87);
+  --ext-text-muted:            rgba(255, 255, 255, 0.40);
+  --ext-bg-idle:               rgba(255, 255, 255, 0.08);
+  --ext-bg-hover:              rgba(255, 255, 255, 0.12);
+  --ext-checkbox-border:       rgba(255, 255, 255, 0.30);
+  --ext-checkbox-border-hover: rgba(255, 255, 255, 0.55);
+  --ext-danger-text:           #f28b82;
+  --ext-danger-bg:             rgba(242, 139, 130, 0.15);
+  --ext-danger-bg-hover:       rgba(242, 139, 130, 0.25);
+  --ext-disabled-text:         rgba(255, 255, 255, 0.30);
+  --ext-disabled-bg:           rgba(255, 255, 255, 0.04);
+}
+
+/* ── 浅色模式覆盖 ────────────────────────────────────────────── */
+@media (prefers-color-scheme: light) {
+  :root {
+    --ext-text-primary:          #202124;
+    --ext-text-muted:            rgba(0, 0, 0, 0.50);
+    --ext-bg-idle:               rgba(0, 0, 0, 0.05);
+    --ext-bg-hover:              rgba(0, 0, 0, 0.10);
+    --ext-checkbox-border:       rgba(0, 0, 0, 0.30);
+    --ext-checkbox-border-hover: rgba(0, 0, 0, 0.55);
+    --ext-danger-text:           #c5221f;
+    --ext-danger-bg:             rgba(197, 34, 31, 0.10);
+    --ext-danger-bg-hover:       rgba(197, 34, 31, 0.18);
+    --ext-disabled-text:         rgba(0, 0, 0, 0.30);
+    --ext-disabled-bg:           rgba(0, 0, 0, 0.04);
+  }
+}
+
 /* ── 批量工具条容器（去除外衣，仅保留布局） ──────────────────────── */
 #nlm-bulk-toolbar {
   display: flex;
@@ -24,8 +56,8 @@
   padding: 0 16px;
   border: none;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.08);
-  color: rgba(255, 255, 255, 0.85);
+  background: var(--ext-bg-idle);
+  color: var(--ext-text-primary);
   font-size: 13px;
   font-weight: 500;
   font-family: inherit;
@@ -35,12 +67,12 @@
 }
 
 #nlm-bulk-toggle-btn:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: var(--ext-bg-hover);
 }
 
 #nlm-bulk-toggle-btn.active {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
+  background: var(--ext-bg-hover);
+  color: var(--ext-text-primary);
 }
 
 #nlm-bulk-toggle-btn:disabled {
@@ -57,8 +89,8 @@
   padding: 0 16px;
   border: none;
   border-radius: 18px;
-  background: rgba(255, 255, 255, 0.04);
-  color: rgba(255, 255, 255, 0.3);
+  background: var(--ext-disabled-bg);
+  color: var(--ext-disabled-text);
   font-size: 13px;
   font-weight: 500;
   font-family: inherit;
@@ -70,13 +102,13 @@
 
 /* 可用态（有选中项） */
 #nlm-bulk-delete-btn:not(:disabled) {
-  background: rgba(242, 139, 130, 0.15);
-  color: #f28b82;
+  background: var(--ext-danger-bg);
+  color: var(--ext-danger-text);
   cursor: pointer;
 }
 
 #nlm-bulk-delete-btn:not(:disabled):hover {
-  background: rgba(242, 139, 130, 0.25);
+  background: var(--ext-danger-bg-hover);
 }
 
 /* disabled 是默认态，不需要额外覆盖 */
@@ -89,7 +121,7 @@
   flex-shrink: 0;
   font-size: 12px;
   font-family: inherit;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--ext-text-muted);
   letter-spacing: 0.01em;
 }
 
@@ -101,7 +133,7 @@
   width: 18px;
   height: 18px;
   border-radius: 50%;
-  border: 1.5px solid rgba(255, 255, 255, 0.3);
+  border: 1.5px solid var(--ext-checkbox-border);
   background: transparent;
   margin-right: 12px;
   margin-left: 4px;
@@ -112,7 +144,7 @@
 }
 
 .nlm-source-checkbox:hover {
-  border-color: rgba(255, 255, 255, 0.55);
+  border-color: var(--ext-checkbox-border-hover);
 }
 
 /* 选中态： Google 强调蓝 */

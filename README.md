@@ -137,3 +137,9 @@ NotebookLM-Source-Cleaner/
 | 弹窗出现后卡住不继续 | 确认按钮文本变化或选择器变化 | 在 Elements 面板检查弹窗按钮文本，更新 `confirmDeleteDialog` 匹配逻辑 |
 | 跳转笔记本后工具栏消失 | SPA 路由触发 teardown 后未重新 mount | 刷新页面；若持续出现可在 Console 查看 `[NLM Cleaner]` 日志 |
 | 控制台报错 | 选择器整体失效 | 打开 F12 → Console，执行 `nlmDebug()`，按输出结果逐项排查 |
+---
+
+## Changelog
+
+**v1.1.0**
+- 🐛 **Fix:** 通过 CSS 变量实现动态主题适配（深色/浅色模式）。修复了 Material Symbols 图标和文字在浅色模式下不可见的问题。（Resolves #1， Thanks to @curiosity654）

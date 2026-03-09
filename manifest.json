@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "NotebookLM Source Cleaner",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "为 NotebookLM 添加批量删除功能，深度融合 Material Design 界面，一键清理海量来源。 / Bulk-delete sources in NotebookLM with a native Material Design UI.",
   "permissions": [],
   "host_permissions": [
