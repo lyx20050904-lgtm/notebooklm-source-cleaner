@@ -469,6 +469,23 @@ window.addEventListener('popstate', () => {
   if (isNotebookUrl(newUrl)) debouncedMount();
 });
 
+/* ── 事件委托：全局点击拦截（捕获阶段） ────────────────────────────────────── */
+
+// 在捕获阶段监听全局点击事件，拦截Checkbox点击并阻止事件冒泡
+document.addEventListener('click', function(event) {
+  // 检查被点击的元素是否是我们目标 Checkbox（或是其内部元素）
+  const checkbox = event.target.closest('.nlm-source-checkbox');
+
+  if (checkbox) {
+    // 关键：阻止事件向上冒泡，防止父容器触发 preventDefault 或打开源文档的逻辑
+    event.stopPropagation();
+
+    // 可选：如果原生行为依然被框架深层拦截，可以手动触发状态切换
+    // checkbox.checked = !checkbox.checked;
+    // checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+  }
+}, true); // 设置为 true 使用事件捕获阶段，确保在父元素响应前拦截
+
 /* ── Diagnostics (window.nlmDebug) ────────────────────────────────────── */
 
 window.nlmDebug = function () {
