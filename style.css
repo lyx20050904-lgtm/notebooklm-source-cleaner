@@ -158,7 +158,9 @@
   margin-right: 12px;
   margin-left: 4px;
   cursor: pointer;
-  position: relative;
+  position: relative !important;
+  z-index: 50 !important;
+  pointer-events: auto !important;
   align-self: center;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
