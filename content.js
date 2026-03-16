@@ -211,7 +211,16 @@ function injectCheckbox(sourceItem) {
   const cb = document.createElement('input');
   cb.type = 'checkbox';
   cb.className = 'nlm-source-checkbox';
+
+  // 阻止click事件冒泡，防止触发NotebookLM原生行为
+  cb.addEventListener('click', (event) => {
+    event.stopPropagation();
+    event.preventDefault();
+  });
+
+  // 保持原有的change事件监听器
   cb.addEventListener('change', updateBulkUI);
+
   sourceItem.insertBefore(cb, sourceItem.firstChild);
 }
 
