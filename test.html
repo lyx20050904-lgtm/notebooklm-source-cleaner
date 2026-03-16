@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>NotebookLM Source Cleaner Test</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 20px; }
+        .test-container { border: 1px solid #ccc; padding: 20px; margin: 10px 0; }
+        .nlm-loading-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); display: flex; justify-content: center; align-items: center; z-index: 1000; }
+        .nlm-loading-spinner { border: 4px solid #f3f3f3; border-top: 4px solid #3498db; border-radius: 50%; width: 50px; height: 50px; animation: spin 1s linear infinite; }
+        .nlm-loading-progress { color: white; margin-top: 20px; font-size: 18px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+    <h1>NotebookLM Source Cleaner Test</h1>
+    <div class="test-container">
+        <h2>Test Sidebar</h2>
+        <section class="source-panel">
+            <div class="single-source-container">
+                <div class="source-content">Source 1</div>
+                <button class="source-item-more-button">More</button>
+            </div>
+            <div class="single-source-container">
+                <div class="source-content">Source 2</div>
+                <button class="source-item-more-button">More</button>
+            </div>
+            <div class="single-source-container">
+                <div class="source-content">Source 3</div>
+                <button class="source-item-more-button">More</button>
+            </div>
+        </section>
+    </div>
+
+    <script>
+        // 模擬location對象
+        const location = { href: 'https://notebooklm.google.com/notebook/123' };
+
+        // 模擬document對象的基本功能
+        const document = {
+            querySelector: function(selector) { return null; },
+            querySelectorAll: function(selector) { return []; },
+            createElement: function(tag) { return { className: '', textContent: '', appendChild: function() {}, insertBefore: function() {}, remove: function() {} }; },
+            body: { appendChild: function() {}, classList: { add: function() {}, remove: function() {} }, contains: function() { return false; } },
+            getElementById: function(id) { return null; },
+            dispatchEvent: function() {}
+        };
+
+        // 模擬console
+        const console = { log: console.log, warn: console.warn, group: console.group, groupEnd: console.groupEnd };
+
+        try {
+            // 執行content.js
+            eval(`(function() {
+                ${fs.readFileSync('/Users/macos/Desktop/2-创意内容运营/NotebookLM-Source-Cleaner/content.js', 'utf8')}
+            })()`);
+
+            // 測試nlmDebug
+            if (window.nlmDebug) {
+                console.log('nlmDebug function exists');
+                window.nlmDebug();
+            } else {
+                console.log('nlmDebug function not found');
+            }
+        } catch (e) {
+            console.error('Error:', e.message);
+        }
+    </script>
+</body>
+</html>
