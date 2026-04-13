@@ -3,12 +3,9 @@
   "version": "1.0.0",
   "description": "> 为 Google NotebookLM 来源列表注入**批量选择与一键删除**功能的 Chrome 浏览器插件（Manifest V3）   > 深度融合 Material Design 3 界面，静默无痕，告别逐条手动点击。",
   "main": "content.js",
-  "directories": {
-    "doc": "docs"
-  },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "stress:dialog": "node scripts/stress-dialog-e2e.js"
+    "stress:dialog": "node \"../NBLM 过程文件/scripts/stress-dialog-e2e.js\""
   },
   "repository": {
     "type": "git",
