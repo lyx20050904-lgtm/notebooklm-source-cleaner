@@ -227,6 +227,27 @@ function isCancelLikeText(text) {
   );
 }
 
+function findNativeConfirmByXPath() {
+  const xpaths = [
+    '/html/body/div[7]/div/div[2]/mat-dialog-container/div/div/delete-source/base-dialog/div/div[3]/button[2]/span[4]',
+    '//delete-source//base-dialog//div[contains(@class,"actions") or contains(@class,"footer") or contains(@class,"buttons")]//button[2]',
+    '//mat-dialog-container//delete-source//button[2]'
+  ];
+
+  for (const xpath of xpaths) {
+    try {
+      const node = document.evaluate(xpath, document, null, XPathResult.FIRST_ORDERED_NODE_TYPE, null).singleNodeValue;
+      if (!node) continue;
+      const btn = node.closest && node.closest('button, [role="button"], a');
+      if (btn) return btn;
+      if (node instanceof Element) return node;
+    } catch (e) {
+      // ignore malformed/unsupported xpath in current DOM snapshot
+    }
+  }
+  return null;
+}
+
 /**
  * Non-blocking async search for the Angular confirm-dialog "delete" button.
  * Scoped strictly to CDK / dialog overlay containers — never matches our own
@@ -280,6 +301,15 @@ async function confirmDeleteDialog() {
   };
 
   for (let i = 0; i < maxRetries; i++) {
+    const nativeByXPath = findNativeConfirmByXPath();
+    if (nativeByXPath) {
+      if (isButtonActionable(nativeByXPath)) {
+        diagLog.push(`[轮询${i}] 命中 XPath 原生确认按钮兜底`);
+        return tryClickConfirm(nativeByXPath, i, 'xpath-fallback');
+      }
+      diagLog.push(`[轮询${i}] XPath 已命中但不可点击: ${getButtonRejectReason(nativeByXPath) || 'unknown'}`);
+    }
+
     const overlayContainers = document.querySelectorAll(
       '.cdk-overlay-container, .cdk-global-overlay-wrapper, dialog, .mat-mdc-dialog-container, [role="dialog"], [role="alertdialog"], mat-dialog-container'
     );
