@@ -186,26 +186,58 @@ function simulateClick(el) {
  * Each iteration yields the main thread via await — no busy-wait, no deadlock.
  */
 async function confirmDeleteDialog() {
-  const maxRetries = 30; // 3000ms 轮询上限
+  const maxRetries = 50; // 5000ms 轮询上限（已从3秒延长到5秒）
   const pollInterval = 100;
+  const diagLog = [];
 
   for (let i = 0; i < maxRetries; i++) {
-    // 定位 Angular 弹窗的各种潜在父级容器
+    // 定位 Angular 弹窗的各种潜在父级容器（扩展选择器）
     const overlayContainers = document.querySelectorAll(
-      '.cdk-overlay-container, .cdk-global-overlay-wrapper, dialog, .mat-mdc-dialog-container'
+      '.cdk-overlay-container, .cdk-global-overlay-wrapper, dialog, .mat-mdc-dialog-container, [role="dialog"], mat-dialog-container'
     );
+
+    if (i === 0 || i % 10 === 0) {
+      diagLog.push(`[轮询${i}] 找到${overlayContainers.length}个overlay容器`);
+    }
 
     for (const container of overlayContainers) {
       const buttons = container.querySelectorAll('button');
+      
       for (const btn of buttons) {
         // 清洗文本：去除所有空白字符（换行、制表符、空格）
-        const cleanText = btn.textContent.replace(/\s+/g, '').toLowerCase();
-
+        const rawText = btn.textContent || '';
+        const cleanText = rawText.replace(/\s+/g, '').toLowerCase();
+        
+        // 检查是否匹配任何确认token
         if (CONFIRM_DELETE_TOKENS.has(cleanText)) {
+          diagLog.push(`✓ [轮询${i}] 找到确认按钮: "${rawText}" → "${cleanText}"`);
+          
+          if (DIAG.debugEnabled) {
+            console.log('[NLM Cleaner] 确认按钮详情:', {
+              rawText,
+              cleanText,
+              html: btn.outerHTML.substring(0, 100),
+              disabled: btn.disabled,
+              ariaLabel: btn.getAttribute('aria-label'),
+              dataTestid: btn.getAttribute('data-testid'),
+            });
+          }
+          
           // 执行点击
-          btn.click();
+          try {
+            btn.click();
+            diagLog.push(`✓ [轮询${i}] btn.click() 已执行`);
+          } catch (e) {
+            diagLog.push(`✗ [轮询${i}] btn.click() 失败: ${e.message}`);
+          }
+          
           if (typeof simulateClick === 'function') {
-            simulateClick(btn);
+            try {
+              simulateClick(btn);
+              diagLog.push(`✓ [轮询${i}] simulateClick() 已执行`);
+            } catch (e) {
+              diagLog.push(`✗ [轮询${i}] simulateClick() 失败: ${e.message}`);
+            }
           }
 
           // 状态断言：阻塞等待直到弹窗按钮从 DOM 树中彻底销毁
@@ -214,20 +246,60 @@ async function confirmDeleteDialog() {
             await new Promise(resolve => setTimeout(resolve, 100));
             waitUnmountCount++;
           }
+          diagLog.push(`✓ [轮询${i}] 按钮已卸载 (等待${waitUnmountCount}*100ms)`);
+          
+          if (DIAG.debugEnabled) {
+            console.log('[NLM Cleaner] confirmDeleteDialog 诊断日志:', diagLog.join('\n'));
+          }
+          
           return true;
         }
       }
     }
+    
+    // 每10轮（1秒）输出一次统计
+    if (i % 10 === 0 && i > 0) {
+      const allButtons = Array.from(overlayContainers).flatMap(c => 
+        Array.from(c.querySelectorAll('button')).map(b => b.textContent.substring(0, 20))
+      );
+      if (allButtons.length > 0) {
+        diagLog.push(`[轮询${i}] 发现${allButtons.length}个按钮，但未匹配任何token: ${allButtons.join(', ')}`);
+      }
+    }
+    
     // 释放主线程
     await new Promise(resolve => setTimeout(resolve, pollInterval));
   }
 
+  // 超时时的详细诊断
+  const finalContainers = document.querySelectorAll(
+    '.cdk-overlay-container, .cdk-global-overlay-wrapper, dialog, .mat-mdc-dialog-container, [role="dialog"], mat-dialog-container'
+  );
+  const orphanedButtons = Array.from(finalContainers).flatMap(c =>
+    Array.from(c.querySelectorAll('button')).map(b => ({
+      text: b.textContent,
+      clean: b.textContent.replace(/\s+/g, '').toLowerCase(),
+      html: b.outerHTML.substring(0, 80),
+    }))
+  );
+
   recordFailure(
     FAILURE_TYPES.DIALOG_TIMEOUT,
-    '确认按钮查找超时',
-    { pollInterval, maxRetries }
+    '确认按钮查找超时 - 5秒钟轮询后仍未找到',
+    { 
+      pollInterval, 
+      maxRetries,
+      tokens: Array.from(CONFIRM_DELETE_TOKENS),
+      orphanedButtons,
+      diagLog,
+    }
   );
-  console.warn('[NLM Cleaner] 确认按钮查找超时。');
+  
+  console.warn('[NLM Cleaner] 确认按钮查找超时。', {
+    foundContainers: finalContainers.length,
+    buttons: orphanedButtons,
+    tokens: Array.from(CONFIRM_DELETE_TOKENS),
+  });
   return false;
 }
 
