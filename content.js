@@ -227,6 +227,31 @@ function isCancelLikeText(text) {
   );
 }
 
+function isNodeAttached(node) {
+  if (!(node instanceof Node)) return false;
+  const root = node.getRootNode();
+  if (root === document) return true;
+  return root instanceof ShadowRoot && document.contains(root.host);
+}
+
+function collectSearchRoots() {
+  const roots = [document];
+  const walker = document.createTreeWalker(document.documentElement || document.body, NodeFilter.SHOW_ELEMENT);
+  let current = walker.currentNode;
+  while (current) {
+    if (current.shadowRoot) {
+      roots.push(current.shadowRoot);
+    }
+    current = walker.nextNode();
+  }
+  return roots;
+}
+
+function queryAllAcrossRoots(selector) {
+  const roots = collectSearchRoots();
+  return roots.flatMap((root) => Array.from(root.querySelectorAll(selector)));
+}
+
 function findNativeConfirmByXPath() {
   const xpaths = [
     '//delete-source//base-dialog//div[contains(@class,"actions") or contains(@class,"footer") or contains(@class,"buttons")]//button[2]',
@@ -259,8 +284,31 @@ function resolveClickableTarget(node) {
   return null;
 }
 
+function findNativeConfirmBySelectors() {
+  const selectors = [
+    'delete-source base-dialog button:nth-of-type(2)',
+    'mat-dialog-container delete-source button:nth-of-type(2)',
+    '[role="dialog"] delete-source button:nth-of-type(2)',
+    '[role="alertdialog"] delete-source button:nth-of-type(2)'
+  ];
+
+  for (const selector of selectors) {
+    const matches = queryAllAcrossRoots(selector);
+    if (matches.length > 0) {
+      return matches[matches.length - 1];
+    }
+  }
+  return null;
+}
+
+function getDialogRoots(dialogRootSelector) {
+  return queryAllAcrossRoots(dialogRootSelector).filter((root) => {
+    return root instanceof Element && root.querySelectorAll('button, [role="button"], a').length > 0;
+  });
+}
+
 function hasDeleteConfirmDialogOpen(dialogRootSelector) {
-  const roots = Array.from(document.querySelectorAll(dialogRootSelector));
+  const roots = getDialogRoots(dialogRootSelector);
   return roots.some((root) => {
     const txt = normalizeDialogText(root.textContent || '');
     return (
@@ -334,7 +382,7 @@ async function confirmDeleteDialog() {
 
     if (typeof simulateClick === 'function') {
       await new Promise(resolve => setTimeout(resolve, 30));
-      const stillMounted = document.body.contains(btn);
+      const stillMounted = isNodeAttached(btn);
       if (!clicked || stillMounted) {
         try {
           simulateClick(btn);
@@ -350,7 +398,7 @@ async function confirmDeleteDialog() {
       await new Promise(resolve => setTimeout(resolve, 100));
       waitCount++;
 
-      const buttonGone = !document.body.contains(btn);
+      const buttonGone = !isNodeAttached(btn);
       const dialogClosed = !hasDeleteConfirmDialogOpen(DIALOG_ROOT_SELECTOR);
       if (buttonGone || dialogClosed) {
         diagLog.push(`✓ [轮询${i}] 点击后状态达成: buttonGone=${buttonGone}, dialogClosed=${dialogClosed}`);
@@ -367,21 +415,22 @@ async function confirmDeleteDialog() {
 
   for (let i = 0; i < maxRetries; i++) {
     const nativeByXPath = findNativeConfirmByXPath();
-    if (nativeByXPath) {
-      if (isButtonActionable(nativeByXPath)) {
+    const nativeBySelector = findNativeConfirmBySelectors();
+    const nativeFallback = nativeBySelector || nativeByXPath;
+
+    if (nativeFallback) {
+      const clickableNative = resolveClickableTarget(nativeFallback) || nativeFallback;
+      if (isButtonActionable(clickableNative) || getButtonRejectReason(clickableNative) === 'pointer-events-none') {
         diagLog.push(`[轮询${i}] 命中 XPath 原生确认按钮兜底`);
-        return tryClickConfirm(nativeByXPath, i, 'xpath-fallback');
+        return tryClickConfirm(clickableNative, i, 'xpath-fallback');
       }
-      diagLog.push(`[轮询${i}] XPath 已命中但不可点击: ${getButtonRejectReason(nativeByXPath) || 'unknown'}`);
+      diagLog.push(`[轮询${i}] XPath/Selector 已命中但不可点击: ${getButtonRejectReason(clickableNative) || 'unknown'}`);
     }
 
-    const overlayContainers = document.querySelectorAll(
+    const overlayContainers = queryAllAcrossRoots(
       '.cdk-overlay-container, .cdk-global-overlay-wrapper, dialog, .mat-mdc-dialog-container, [role="dialog"], [role="alertdialog"], mat-dialog-container'
     );
-    const dialogRoots = Array.from(document.querySelectorAll(DIALOG_ROOT_SELECTOR)).filter((root) => {
-      // 不对根节点做严格“可见性”判定，避免误杀 display: contents / 过渡态容器
-      return root.querySelectorAll('button, [role="button"], a').length > 0;
-    });
+    const dialogRoots = getDialogRoots(DIALOG_ROOT_SELECTOR);
 
     if (i === 0 || i % 10 === 0) {
       diagLog.push(`[轮询${i}] 找到${overlayContainers.length}个overlay容器, ${dialogRoots.length}个dialog根节点`);
@@ -465,9 +514,7 @@ async function confirmDeleteDialog() {
   }
 
   // 超时时的详细诊断
-  const finalContainers = Array.from(document.querySelectorAll(DIALOG_ROOT_SELECTOR)).filter((root) => {
-    return root.querySelectorAll('button, [role="button"], a').length > 0;
-  });
+  const finalContainers = getDialogRoots(DIALOG_ROOT_SELECTOR);
   const orphanedButtons = finalContainers.flatMap(c =>
     Array.from(c.querySelectorAll('button, [role="button"], a')).map(b => ({
       text: b.textContent,
