@@ -27,7 +27,7 @@ const LOCALES = {
     bulkSelect: 'Bulk Select',
     deleteSelected: 'Delete Selected',
     successDeleted: 'Success: deleted {count} items',
-    confirmDeleteTokens: ['delete', 'remove', 'removesource'],
+    confirmDeleteTokens: ['delete', 'remove', 'removesource', 'confirm', 'yes'],
   },
   'zh-CN': {
     preparing: '准备中...',
@@ -37,7 +37,7 @@ const LOCALES = {
     bulkSelect: '批量选择',
     deleteSelected: '删除选中',
     successDeleted: '成功删除 {count} 条',
-    confirmDeleteTokens: ['删除', '移除', '移除来源', 'delete', 'remove'],
+    confirmDeleteTokens: ['删除', '移除', '移除来源', 'delete', 'remove', '确认', '确定', '是'],
   },
   'zh-TW': {
     preparing: '準備中...',
@@ -47,7 +47,7 @@ const LOCALES = {
     bulkSelect: '批次選擇',
     deleteSelected: '刪除選中',
     successDeleted: '成功刪除 {count} 筆',
-    confirmDeleteTokens: ['刪除', '删除', '移除', '移除來源', 'delete', 'remove'],
+    confirmDeleteTokens: ['刪除', '删除', '移除', '移除來源', 'delete', 'remove', '確認', '確定', '是'],
   },
   ja: {
     preparing: '準備中...',
@@ -190,7 +190,7 @@ function isElementVisible(el) {
 }
 
 function isButtonActionable(btn) {
-  if (!(btn instanceof HTMLButtonElement)) return false;
+  if (!(btn instanceof Element)) return false;
   if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') return false;
   const style = getComputedStyle(btn);
   if (style.display === 'none' || style.visibility === 'hidden' || style.pointerEvents === 'none') {
@@ -216,15 +216,15 @@ async function confirmDeleteDialog() {
   const maxRetries = 50; // 5000ms 轮询上限（已从3秒延长到5秒）
   const pollInterval = 100;
   const diagLog = [];
-  const DIALOG_ROOT_SELECTOR = 'dialog, [role="dialog"], .mat-mdc-dialog-container, mat-dialog-container, .cdk-dialog-container, .dialog-container';
+  const DIALOG_ROOT_SELECTOR = 'dialog, [role="dialog"], [role="alertdialog"], .mat-mdc-dialog-container, mat-dialog-container, .cdk-dialog-container, .dialog-container, .gmat-dialog';
 
   for (let i = 0; i < maxRetries; i++) {
     const overlayContainers = document.querySelectorAll(
-      '.cdk-overlay-container, .cdk-global-overlay-wrapper, dialog, .mat-mdc-dialog-container, [role="dialog"], mat-dialog-container'
+      '.cdk-overlay-container, .cdk-global-overlay-wrapper, dialog, .mat-mdc-dialog-container, [role="dialog"], [role="alertdialog"], mat-dialog-container'
     );
     const dialogRoots = Array.from(document.querySelectorAll(DIALOG_ROOT_SELECTOR)).filter((root) => {
       // 不对根节点做严格“可见性”判定，避免误杀 display: contents / 过渡态容器
-      return root.querySelectorAll('button').length > 0;
+      return root.querySelectorAll('button, [role="button"], a').length > 0;
     });
 
     if (i === 0 || i % 10 === 0) {
@@ -233,7 +233,7 @@ async function confirmDeleteDialog() {
 
     // 优先处理后出现的 dialog（通常为最顶层）
     for (const container of dialogRoots.reverse()) {
-      const buttons = Array.from(container.querySelectorAll('button')).filter(isButtonActionable);
+      const buttons = Array.from(container.querySelectorAll('button, [role="button"], a')).filter(isButtonActionable);
       
       for (const btn of buttons) {
         // 清洗文本：去除所有空白字符（换行、制表符、空格）
@@ -242,7 +242,7 @@ async function confirmDeleteDialog() {
         const ariaLabel = normalizeDialogText(btn.getAttribute('aria-label'));
         const title = normalizeDialogText(btn.getAttribute('title'));
         const matchedToken = Array.from(CONFIRM_DELETE_TOKENS).find((token) => {
-          return cleanText === token || ariaLabel === token || title === token;
+          return cleanText.includes(token) || ariaLabel.includes(token) || title.includes(token);
         });
         
         // 检查是否匹配任何确认token
@@ -319,10 +319,10 @@ async function confirmDeleteDialog() {
 
   // 超时时的详细诊断
   const finalContainers = Array.from(document.querySelectorAll(DIALOG_ROOT_SELECTOR)).filter((root) => {
-    return root.querySelectorAll('button').length > 0;
+    return root.querySelectorAll('button, [role="button"], a').length > 0;
   });
   const orphanedButtons = finalContainers.flatMap(c =>
-    Array.from(c.querySelectorAll('button')).map(b => ({
+    Array.from(c.querySelectorAll('button, [role="button"], a')).map(b => ({
       text: b.textContent,
       clean: normalizeDialogText(b.textContent),
       html: b.outerHTML.substring(0, 80),
@@ -341,6 +341,13 @@ async function confirmDeleteDialog() {
     }
   );
   
+  if (orphanedButtons.length > 0) {
+    const textList = orphanedButtons.map(b => b.text.trim().substring(0, 10));
+    showToast(`超时。可点元素: [${textList.join(' | ')}]`, 8000);
+  } else {
+    showToast('超时。画面上没有任何对话框/按钮，Selector不匹配...', 8000);
+  }
+
   console.warn('[NLM Cleaner] 确认按钮查找超时。', {
     foundContainers: finalContainers.length,
     buttons: orphanedButtons,
