@@ -229,9 +229,10 @@ function isCancelLikeText(text) {
 
 function findNativeConfirmByXPath() {
   const xpaths = [
-    '/html/body/div[7]/div/div[2]/mat-dialog-container/div/div/delete-source/base-dialog/div/div[3]/button[2]/span[4]',
     '//delete-source//base-dialog//div[contains(@class,"actions") or contains(@class,"footer") or contains(@class,"buttons")]//button[2]',
-    '//mat-dialog-container//delete-source//button[2]'
+    '//mat-dialog-container//delete-source//button[2]',
+    '//delete-source//button[2]',
+    '/html/body/div[7]/div/div[2]/mat-dialog-container/div/div/delete-source/base-dialog/div/div[3]/button[2]/span[4]'
   ];
 
   for (const xpath of xpaths) {
@@ -246,6 +247,31 @@ function findNativeConfirmByXPath() {
     }
   }
   return null;
+}
+
+function resolveClickableTarget(node) {
+  if (!(node instanceof Element)) return null;
+  let cur = node;
+  for (let depth = 0; depth < 5 && cur; depth++) {
+    if (isButtonActionable(cur)) return cur;
+    cur = cur.parentElement;
+  }
+  return null;
+}
+
+function hasDeleteConfirmDialogOpen(dialogRootSelector) {
+  const roots = Array.from(document.querySelectorAll(dialogRootSelector));
+  return roots.some((root) => {
+    const txt = normalizeDialogText(root.textContent || '');
+    return (
+      root.querySelector('delete-source, base-dialog') ||
+      txt.includes('要删除') ||
+      txt.includes('删除') ||
+      txt.includes('移除来源') ||
+      txt.includes('deletesource') ||
+      txt.includes('removesource')
+    );
+  });
 }
 
 function pickStructuralConfirmButton(container) {
@@ -319,17 +345,24 @@ async function confirmDeleteDialog() {
       }
     }
 
-    let waitUnmountCount = 0;
-    while (document.body.contains(btn) && waitUnmountCount < 20) {
+    let waitCount = 0;
+    while (waitCount < 30) {
       await new Promise(resolve => setTimeout(resolve, 100));
-      waitUnmountCount++;
+      waitCount++;
+
+      const buttonGone = !document.body.contains(btn);
+      const dialogClosed = !hasDeleteConfirmDialogOpen(DIALOG_ROOT_SELECTOR);
+      if (buttonGone || dialogClosed) {
+        diagLog.push(`✓ [轮询${i}] 点击后状态达成: buttonGone=${buttonGone}, dialogClosed=${dialogClosed}`);
+        return true;
+      }
     }
-    diagLog.push(`✓ [轮询${i}] 按钮卸载检查结束 (等待${waitUnmountCount}*100ms)`);
+    diagLog.push(`✗ [轮询${i}] 点击后状态未变化 (等待${waitCount}*100ms)`);
 
     if (DIAG.debugEnabled) {
       console.log('[NLM Cleaner] confirmDeleteDialog 诊断日志:', diagLog.join('\n'));
     }
-    return true;
+    return false;
   };
 
   for (let i = 0; i < maxRetries; i++) {
@@ -397,7 +430,8 @@ async function confirmDeleteDialog() {
           }
 
           if (actionable || rejectReason === 'pointer-events-none') {
-            return tryClickConfirm(btn, i, 'actionable');
+            const clickTarget = resolveClickableTarget(btn) || btn;
+            return tryClickConfirm(clickTarget, i, 'actionable');
           }
 
           matchedButBlocked++;
@@ -407,7 +441,8 @@ async function confirmDeleteDialog() {
       const structuralBtn = pickStructuralConfirmButton(container);
       if (structuralBtn) {
         diagLog.push(`[轮询${i}] 结构兜底命中确认按钮`);
-        return tryClickConfirm(structuralBtn, i, 'structural-fallback');
+        const clickTarget = resolveClickableTarget(structuralBtn) || structuralBtn;
+        return tryClickConfirm(clickTarget, i, 'structural-fallback');
       }
     }
 
@@ -445,7 +480,7 @@ async function confirmDeleteDialog() {
 
   recordFailure(
     FAILURE_TYPES.DIALOG_TIMEOUT,
-    '确认按钮查找超时 - 5秒钟轮询后仍未找到',
+    '确认按钮查找超时 - 12秒钟轮询后仍未找到',
     { 
       pollInterval, 
       maxRetries,
@@ -513,6 +548,8 @@ function dismissLoadingOverlay() {
 /* ── Core Delete Flow ──────────────────────────────────────────────────── */
 
 async function deleteSourceItem(sourceItem) {
+  const sourceCountBefore = getAllSourceItems().length;
+
   // Step 1: exact selector only — no heuristic fallbacks
   const menuBtn = sourceItem.querySelector(SELECTORS.MENU_BTN);
   if (!menuBtn) {
@@ -559,9 +596,29 @@ async function deleteSourceItem(sourceItem) {
       '删除确认未完成，跳过当前项',
       { sourceText: sourceItem.textContent?.slice(0, 80) || '' }
     );
+    return false;
   }
 
-  return confirmed;
+  // Step 6: verify deletion result via list shrink or source detachment.
+  const verifyDeadline = Date.now() + 4000;
+  while (Date.now() < verifyDeadline) {
+    const sourceCountNow = getAllSourceItems().length;
+    if (sourceCountNow < sourceCountBefore || !document.body.contains(sourceItem)) {
+      return true;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 100));
+  }
+
+  recordFailure(
+    FAILURE_TYPES.DIALOG_TIMEOUT,
+    '确认点击后未观察到来源数量变化',
+    {
+      sourceCountBefore,
+      sourceCountNow: getAllSourceItems().length,
+      sourceText: sourceItem.textContent?.slice(0, 80) || ''
+    }
+  );
+  return false;
 }
 
 /* ── Bulk Delete ───────────────────────────────────────────────────────── */
