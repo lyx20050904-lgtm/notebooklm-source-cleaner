@@ -178,9 +178,38 @@ function waitForElement(queryFn, timeout = 3000) {
 
 /** Dispatch mousedown + mouseup + click on an element. */
 function simulateClick(el) {
-  ['mousedown', 'mouseup', 'click'].forEach(type =>
-    el.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, view: window }))
-  );
+  ['pointerdown', 'mousedown', 'pointerup', 'mouseup', 'click'].forEach(type => {
+    const EventCtor = type.startsWith('pointer') ? PointerEvent : MouseEvent;
+    el.dispatchEvent(new EventCtor(type, { bubbles: true, cancelable: true, view: window }));
+  });
+}
+
+function activateElementRobustly(el) {
+  if (!(el instanceof Element)) return;
+
+  // Strategy 1: focus + native click for framework-integrated handlers.
+  if (typeof el.focus === 'function') {
+    try {
+      el.focus({ preventScroll: true });
+    } catch (e) {
+      el.focus();
+    }
+  }
+  if (typeof el.click === 'function') {
+    el.click();
+  }
+
+  // Strategy 2: dispatch pointer/mouse events for delegated listeners.
+  simulateClick(el);
+
+  // Strategy 3: keyboard activation fallback (Enter/Space on focused control).
+  const kbdTarget = document.activeElement === el ? el : document.activeElement;
+  if (kbdTarget instanceof Element) {
+    ['keydown', 'keyup'].forEach((type) => {
+      kbdTarget.dispatchEvent(new KeyboardEvent(type, { key: 'Enter', bubbles: true, cancelable: true }));
+      kbdTarget.dispatchEvent(new KeyboardEvent(type, { key: ' ', bubbles: true, cancelable: true }));
+    });
+  }
 }
 
 function isElementVisible(el) {
@@ -371,26 +400,11 @@ async function confirmDeleteDialog() {
     const cleanText = normalizeDialogText(rawText);
     diagLog.push(`✓ [轮询${i}] 触发确认点击(${reasonTag}): "${rawText}" → "${cleanText}"`);
 
-    let clicked = false;
     try {
-      btn.click();
-      diagLog.push(`✓ [轮询${i}] btn.click() 已执行`);
-      clicked = true;
+      activateElementRobustly(btn);
+      diagLog.push(`✓ [轮询${i}] robust activate 已执行`);
     } catch (e) {
-      diagLog.push(`✗ [轮询${i}] btn.click() 失败: ${e.message}`);
-    }
-
-    if (typeof simulateClick === 'function') {
-      await new Promise(resolve => setTimeout(resolve, 30));
-      const stillMounted = isNodeAttached(btn);
-      if (!clicked || stillMounted) {
-        try {
-          simulateClick(btn);
-          diagLog.push(`✓ [轮询${i}] simulateClick() 已执行`);
-        } catch (e) {
-          diagLog.push(`✗ [轮询${i}] simulateClick() 失败: ${e.message}`);
-        }
-      }
+      diagLog.push(`✗ [轮询${i}] robust activate 失败: ${e.message}`);
     }
 
     let waitCount = 0;
@@ -492,6 +506,25 @@ async function confirmDeleteDialog() {
         diagLog.push(`[轮询${i}] 结构兜底命中确认按钮`);
         const clickTarget = resolveClickableTarget(structuralBtn) || structuralBtn;
         return tryClickConfirm(clickTarget, i, 'structural-fallback');
+      }
+
+      // Final fallback: in delete context, force-pick rightmost non-cancel button even if actionability check is ambiguous.
+      const textInContainer = normalizeDialogText(container.textContent || '');
+      const hasDeleteContext =
+        !!container.querySelector('delete-source, base-dialog') ||
+        textInContainer.includes('删除') ||
+        textInContainer.includes('移除来源') ||
+        textInContainer.includes('deletesource') ||
+        textInContainer.includes('removesource');
+      if (hasDeleteContext) {
+        const forceCandidates = Array.from(container.querySelectorAll('button, [role="button"], a'));
+        const nonCancelForce = forceCandidates.filter((btn) => !isCancelLikeText((btn.textContent || '') + ' ' + (btn.getAttribute('aria-label') || '')));
+        const forceBtn = nonCancelForce[nonCancelForce.length - 1] || forceCandidates[forceCandidates.length - 1];
+        if (forceBtn) {
+          diagLog.push(`[轮询${i}] 最终强制兜底命中确认按钮`);
+          const clickTarget = resolveClickableTarget(forceBtn) || forceBtn;
+          return tryClickConfirm(clickTarget, i, 'force-last-button-fallback');
+        }
       }
     }
 
