@@ -199,11 +199,32 @@ function isButtonActionable(btn) {
   return true;
 }
 
+function getButtonRejectReason(btn) {
+  if (!(btn instanceof Element)) return 'not-element';
+  if (btn.disabled) return 'disabled';
+  if (btn.getAttribute('aria-disabled') === 'true') return 'aria-disabled';
+  const style = getComputedStyle(btn);
+  if (style.display === 'none') return 'display-none';
+  if (style.visibility === 'hidden') return 'visibility-hidden';
+  if (style.pointerEvents === 'none') return 'pointer-events-none';
+  return '';
+}
+
 function normalizeDialogText(value) {
   return String(value || '')
     .replace(/\s+/g, '')
     .replace(/[\p{P}\p{S}]/gu, '')
     .toLowerCase();
+}
+
+function isCancelLikeText(text) {
+  const normalized = normalizeDialogText(text);
+  return (
+    normalized.includes('取消') ||
+    normalized.includes('cancel') ||
+    normalized.includes('no') ||
+    normalized.includes('否')
+  );
 }
 
 /**
@@ -213,10 +234,50 @@ function normalizeDialogText(value) {
  * Each iteration yields the main thread via await — no busy-wait, no deadlock.
  */
 async function confirmDeleteDialog() {
-  const maxRetries = 50; // 5000ms 轮询上限（已从3秒延长到5秒）
+  const maxRetries = 120; // 12000ms 轮询上限，覆盖真实页面慢弹窗/动画期
   const pollInterval = 100;
   const diagLog = [];
   const DIALOG_ROOT_SELECTOR = 'dialog, [role="dialog"], [role="alertdialog"], .mat-mdc-dialog-container, mat-dialog-container, .cdk-dialog-container, .dialog-container, .gmat-dialog';
+
+  const tryClickConfirm = async (btn, i, reasonTag) => {
+    const rawText = btn.textContent || '';
+    const cleanText = normalizeDialogText(rawText);
+    diagLog.push(`✓ [轮询${i}] 触发确认点击(${reasonTag}): "${rawText}" → "${cleanText}"`);
+
+    let clicked = false;
+    try {
+      btn.click();
+      diagLog.push(`✓ [轮询${i}] btn.click() 已执行`);
+      clicked = true;
+    } catch (e) {
+      diagLog.push(`✗ [轮询${i}] btn.click() 失败: ${e.message}`);
+    }
+
+    if (typeof simulateClick === 'function') {
+      await new Promise(resolve => setTimeout(resolve, 30));
+      const stillMounted = document.body.contains(btn);
+      if (!clicked || stillMounted) {
+        try {
+          simulateClick(btn);
+          diagLog.push(`✓ [轮询${i}] simulateClick() 已执行`);
+        } catch (e) {
+          diagLog.push(`✗ [轮询${i}] simulateClick() 失败: ${e.message}`);
+        }
+      }
+    }
+
+    let waitUnmountCount = 0;
+    while (document.body.contains(btn) && waitUnmountCount < 20) {
+      await new Promise(resolve => setTimeout(resolve, 100));
+      waitUnmountCount++;
+    }
+    diagLog.push(`✓ [轮询${i}] 按钮卸载检查结束 (等待${waitUnmountCount}*100ms)`);
+
+    if (DIAG.debugEnabled) {
+      console.log('[NLM Cleaner] confirmDeleteDialog 诊断日志:', diagLog.join('\n'));
+    }
+    return true;
+  };
 
   for (let i = 0; i < maxRetries; i++) {
     const overlayContainers = document.querySelectorAll(
@@ -231,11 +292,13 @@ async function confirmDeleteDialog() {
       diagLog.push(`[轮询${i}] 找到${overlayContainers.length}个overlay容器, ${dialogRoots.length}个dialog根节点`);
     }
 
+    let matchedButBlocked = 0;
+
     // 优先处理后出现的 dialog（通常为最顶层）
     for (const container of dialogRoots.reverse()) {
-      const buttons = Array.from(container.querySelectorAll('button, [role="button"], a')).filter(isButtonActionable);
-      
-      for (const btn of buttons) {
+      const candidates = Array.from(container.querySelectorAll('button, [role="button"], a'));
+
+      for (const btn of candidates) {
         // 清洗文本：去除所有空白字符（换行、制表符、空格）
         const rawText = btn.textContent || '';
         const cleanText = normalizeDialogText(rawText);
@@ -244,10 +307,17 @@ async function confirmDeleteDialog() {
         const matchedToken = Array.from(CONFIRM_DELETE_TOKENS).find((token) => {
           return cleanText.includes(token) || ariaLabel.includes(token) || title.includes(token);
         });
+        const hasConfirmSemantics =
+          btn.hasAttribute('cdkfocusinitial') ||
+          btn.getAttribute('mat-flat-button') !== null ||
+          /mat-mdc-unelevated-button|mdc-button--unelevated|mdc-button--raised|mat-primary/.test(btn.className || '');
+        const fallbackConfirm = hasConfirmSemantics && !isCancelLikeText(rawText) && !isCancelLikeText(btn.getAttribute('aria-label'));
+        const actionable = isButtonActionable(btn);
+        const rejectReason = getButtonRejectReason(btn);
         
-        // 检查是否匹配任何确认token
-        if (matchedToken) {
-          diagLog.push(`✓ [轮询${i}] 找到确认按钮: "${rawText}" → "${cleanText}" (token: ${matchedToken})`);
+        // 匹配删除语义或结构语义（主操作按钮）
+        if (matchedToken || fallbackConfirm) {
+          diagLog.push(`✓ [轮询${i}] 找到确认候选: "${rawText}" → "${cleanText}" (${matchedToken ? `token: ${matchedToken}` : 'semantic fallback'}, actionable=${actionable}${rejectReason ? `, reason=${rejectReason}` : ''})`);
           
           if (DIAG.debugEnabled) {
             console.log('[NLM Cleaner] 确认按钮详情:', {
@@ -259,48 +329,22 @@ async function confirmDeleteDialog() {
               html: btn.outerHTML.substring(0, 100),
               disabled: btn.disabled,
               dataTestid: btn.getAttribute('data-testid'),
+              actionable,
+              rejectReason,
             });
           }
-          
-          // 执行点击
-          let clicked = false;
-          try {
-            btn.click();
-            diagLog.push(`✓ [轮询${i}] btn.click() 已执行`);
-            clicked = true;
-          } catch (e) {
-            diagLog.push(`✗ [轮询${i}] btn.click() 失败: ${e.message}`);
+
+          if (actionable) {
+            return tryClickConfirm(btn, i, 'actionable');
           }
 
-          // 仅在原生 click 无效时再降级派发事件，避免重复触发。
-          if (typeof simulateClick === 'function') {
-            await new Promise(resolve => setTimeout(resolve, 30));
-            const stillMounted = document.body.contains(btn);
-            if (!clicked || stillMounted) {
-            try {
-              simulateClick(btn);
-              diagLog.push(`✓ [轮询${i}] simulateClick() 已执行`);
-            } catch (e) {
-              diagLog.push(`✗ [轮询${i}] simulateClick() 失败: ${e.message}`);
-            }
-            }
-          }
-
-          // 状态断言：阻塞等待直到弹窗按钮从 DOM 树中彻底销毁
-          let waitUnmountCount = 0;
-          while (document.body.contains(btn) && waitUnmountCount < 10) {
-            await new Promise(resolve => setTimeout(resolve, 100));
-            waitUnmountCount++;
-          }
-          diagLog.push(`✓ [轮询${i}] 按钮已卸载 (等待${waitUnmountCount}*100ms)`);
-          
-          if (DIAG.debugEnabled) {
-            console.log('[NLM Cleaner] confirmDeleteDialog 诊断日志:', diagLog.join('\n'));
-          }
-          
-          return true;
+          matchedButBlocked++;
         }
       }
+    }
+
+    if (matchedButBlocked > 0) {
+      diagLog.push(`[轮询${i}] 检测到 ${matchedButBlocked} 个确认候选，但当前不可点击，继续等待下一轮`);
     }
     
     // 每10轮（1秒）输出一次统计
@@ -325,6 +369,8 @@ async function confirmDeleteDialog() {
     Array.from(c.querySelectorAll('button, [role="button"], a')).map(b => ({
       text: b.textContent,
       clean: normalizeDialogText(b.textContent),
+      actionable: isButtonActionable(b),
+      rejectReason: getButtonRejectReason(b),
       html: b.outerHTML.substring(0, 80),
     }))
   );
