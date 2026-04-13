@@ -98,11 +98,15 @@ function t(key, params) {
 }
 
 function getDeleteTokens() {
-  const dict = LOCALES[ACTIVE_LOCALE] || LOCALES.en;
-  const tokenList = Array.isArray(dict.confirmDeleteTokens) ? dict.confirmDeleteTokens : [];
+  const tokenList = [];
+  Object.values(LOCALES).forEach((dict) => {
+    if (Array.isArray(dict.confirmDeleteTokens)) {
+      tokenList.push(...dict.confirmDeleteTokens);
+    }
+  });
   return new Set(
-    [...tokenList, ...LOCALES.en.confirmDeleteTokens]
-      .map((token) => token.replace(/\s+/g, '').toLowerCase())
+    tokenList
+      .map((token) => String(token).replace(/\s+/g, '').toLowerCase())
   );
 }
 
@@ -179,6 +183,21 @@ function simulateClick(el) {
   );
 }
 
+function isElementVisible(el) {
+  if (!(el instanceof Element)) return false;
+  const rect = el.getBoundingClientRect();
+  if (rect.width === 0 && rect.height === 0) return false;
+  const style = getComputedStyle(el);
+  return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+}
+
+function normalizeDialogText(value) {
+  return String(value || '')
+    .replace(/\s+/g, '')
+    .replace(/[\p{P}\p{S}]/gu, '')
+    .toLowerCase();
+}
+
 /**
  * Non-blocking async search for the Angular confirm-dialog "delete" button.
  * Scoped strictly to CDK / dialog overlay containers — never matches our own
@@ -189,36 +208,45 @@ async function confirmDeleteDialog() {
   const maxRetries = 50; // 5000ms 轮询上限（已从3秒延长到5秒）
   const pollInterval = 100;
   const diagLog = [];
+  const DIALOG_ROOT_SELECTOR = 'dialog, [role="dialog"], .mat-mdc-dialog-container, mat-dialog-container, .cdk-dialog-container, .dialog-container';
 
   for (let i = 0; i < maxRetries; i++) {
-    // 定位 Angular 弹窗的各种潜在父级容器（扩展选择器）
     const overlayContainers = document.querySelectorAll(
       '.cdk-overlay-container, .cdk-global-overlay-wrapper, dialog, .mat-mdc-dialog-container, [role="dialog"], mat-dialog-container'
     );
+    const dialogRoots = Array.from(document.querySelectorAll(DIALOG_ROOT_SELECTOR)).filter(isElementVisible);
 
     if (i === 0 || i % 10 === 0) {
-      diagLog.push(`[轮询${i}] 找到${overlayContainers.length}个overlay容器`);
+      diagLog.push(`[轮询${i}] 找到${overlayContainers.length}个overlay容器, ${dialogRoots.length}个dialog根节点`);
     }
 
-    for (const container of overlayContainers) {
-      const buttons = container.querySelectorAll('button');
+    // 优先处理后出现的 dialog（通常为最顶层）
+    for (const container of dialogRoots.reverse()) {
+      const buttons = Array.from(container.querySelectorAll('button')).filter(isElementVisible);
       
       for (const btn of buttons) {
         // 清洗文本：去除所有空白字符（换行、制表符、空格）
         const rawText = btn.textContent || '';
-        const cleanText = rawText.replace(/\s+/g, '').toLowerCase();
+        const cleanText = normalizeDialogText(rawText);
+        const ariaLabel = normalizeDialogText(btn.getAttribute('aria-label'));
+        const title = normalizeDialogText(btn.getAttribute('title'));
+        const matchedToken = Array.from(CONFIRM_DELETE_TOKENS).find((token) => {
+          return cleanText === token || ariaLabel === token || title === token;
+        });
         
         // 检查是否匹配任何确认token
-        if (CONFIRM_DELETE_TOKENS.has(cleanText)) {
-          diagLog.push(`✓ [轮询${i}] 找到确认按钮: "${rawText}" → "${cleanText}"`);
+        if (matchedToken) {
+          diagLog.push(`✓ [轮询${i}] 找到确认按钮: "${rawText}" → "${cleanText}" (token: ${matchedToken})`);
           
           if (DIAG.debugEnabled) {
             console.log('[NLM Cleaner] 确认按钮详情:', {
               rawText,
               cleanText,
+              ariaLabel,
+              title,
+              matchedToken,
               html: btn.outerHTML.substring(0, 100),
               disabled: btn.disabled,
-              ariaLabel: btn.getAttribute('aria-label'),
               dataTestid: btn.getAttribute('data-testid'),
             });
           }
@@ -259,7 +287,7 @@ async function confirmDeleteDialog() {
     
     // 每10轮（1秒）输出一次统计
     if (i % 10 === 0 && i > 0) {
-      const allButtons = Array.from(overlayContainers).flatMap(c => 
+      const allButtons = Array.from(dialogRoots).flatMap(c => 
         Array.from(c.querySelectorAll('button')).map(b => b.textContent.substring(0, 20))
       );
       if (allButtons.length > 0) {
@@ -272,13 +300,11 @@ async function confirmDeleteDialog() {
   }
 
   // 超时时的详细诊断
-  const finalContainers = document.querySelectorAll(
-    '.cdk-overlay-container, .cdk-global-overlay-wrapper, dialog, .mat-mdc-dialog-container, [role="dialog"], mat-dialog-container'
-  );
-  const orphanedButtons = Array.from(finalContainers).flatMap(c =>
+  const finalContainers = Array.from(document.querySelectorAll(DIALOG_ROOT_SELECTOR)).filter(isElementVisible);
+  const orphanedButtons = finalContainers.flatMap(c =>
     Array.from(c.querySelectorAll('button')).map(b => ({
       text: b.textContent,
-      clean: b.textContent.replace(/\s+/g, '').toLowerCase(),
+      clean: normalizeDialogText(b.textContent),
       html: b.outerHTML.substring(0, 80),
     }))
   );
@@ -385,9 +411,16 @@ async function deleteSourceItem(sourceItem) {
   simulateClick(deleteMenuItem);
 
   // Step 5: non-blocking confirm dialog (scoped to overlay containers)
-  await confirmDeleteDialog();
+  const confirmed = await confirmDeleteDialog();
+  if (!confirmed) {
+    recordFailure(
+      FAILURE_TYPES.DIALOG_TIMEOUT,
+      '删除确认未完成，跳过当前项',
+      { sourceText: sourceItem.textContent?.slice(0, 80) || '' }
+    );
+  }
 
-  return true;
+  return confirmed;
 }
 
 /* ── Bulk Delete ───────────────────────────────────────────────────────── */
