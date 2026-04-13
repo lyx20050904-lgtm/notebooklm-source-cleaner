@@ -248,6 +248,38 @@ function findNativeConfirmByXPath() {
   return null;
 }
 
+function pickStructuralConfirmButton(container) {
+  if (!(container instanceof Element)) return null;
+  const allCandidates = Array.from(container.querySelectorAll('button, [role="button"], a'));
+  const actionable = allCandidates.filter(isButtonActionable);
+  if (actionable.length === 0) return null;
+
+  const contextualText = normalizeDialogText(container.textContent || '');
+  const hasDeleteContext =
+    !!container.querySelector('delete-source, base-dialog') ||
+    contextualText.includes('要删除') ||
+    contextualText.includes('删除') ||
+    contextualText.includes('移除来源') ||
+    contextualText.includes('deletesource') ||
+    contextualText.includes('removesource');
+
+  if (!hasDeleteContext) return null;
+
+  const nonCancel = actionable.filter((btn) => {
+    const text = (btn.textContent || '') + ' ' + (btn.getAttribute('aria-label') || '');
+    return !isCancelLikeText(text);
+  });
+  const pool = nonCancel.length > 0 ? nonCancel : actionable;
+
+  const preferred = pool.find((btn) =>
+    btn.hasAttribute('cdkfocusinitial') ||
+    btn.getAttribute('mat-flat-button') !== null ||
+    /mat-mdc-unelevated-button|mdc-button--unelevated|mdc-button--raised|mat-primary/.test(btn.className || '')
+  );
+
+  return preferred || pool[pool.length - 1] || null;
+}
+
 /**
  * Non-blocking async search for the Angular confirm-dialog "delete" button.
  * Scoped strictly to CDK / dialog overlay containers — never matches our own
@@ -364,12 +396,18 @@ async function confirmDeleteDialog() {
             });
           }
 
-          if (actionable) {
+          if (actionable || rejectReason === 'pointer-events-none') {
             return tryClickConfirm(btn, i, 'actionable');
           }
 
           matchedButBlocked++;
         }
+      }
+
+      const structuralBtn = pickStructuralConfirmButton(container);
+      if (structuralBtn) {
+        diagLog.push(`[轮询${i}] 结构兜底命中确认按钮`);
+        return tryClickConfirm(structuralBtn, i, 'structural-fallback');
       }
     }
 
