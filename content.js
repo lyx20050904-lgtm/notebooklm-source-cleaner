@@ -194,6 +194,72 @@ function detectNotebookThemeFromDom() {
   return { mode: null, source: 'none', rawHints: hints };
 }
 
+function parseColorToRgb(color) {
+  const match = String(color || '').trim().match(/^rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)$/i);
+  if (!match) return null;
+  const alpha = match[4] === undefined ? 1 : Number(match[4]);
+  return {
+    r: Number(match[1]),
+    g: Number(match[2]),
+    b: Number(match[3]),
+    a: Number.isFinite(alpha) ? alpha : 1,
+  };
+}
+
+function getRelativeLuminance(rgb) {
+  const normalize = (value) => {
+    const channel = value / 255;
+    return channel <= 0.03928 ? channel / 12.92 : Math.pow((channel + 0.055) / 1.055, 2.4);
+  };
+  return 0.2126 * normalize(rgb.r) + 0.7152 * normalize(rgb.g) + 0.0722 * normalize(rgb.b);
+}
+
+function inferThemeFromComputedStyles() {
+  const candidates = [
+    document.documentElement,
+    document.body,
+    document.querySelector('main'),
+    document.querySelector('[role="main"]'),
+    document.querySelector('app-root'),
+  ].filter(Boolean);
+
+  const hints = [];
+  const luminanceSamples = [];
+
+  for (const el of candidates) {
+    const style = getComputedStyle(el);
+    const colorScheme = normalizeThemeText(style.colorScheme || style.getPropertyValue('color-scheme'));
+    if (/\blight\b/.test(colorScheme)) {
+      hints.push(`color-scheme=${colorScheme}`);
+      return { mode: 'light', source: 'site-computed', rawHints: hints };
+    }
+    if (/\bdark\b/.test(colorScheme)) {
+      hints.push(`color-scheme=${colorScheme}`);
+      return { mode: 'dark', source: 'site-computed', rawHints: hints };
+    }
+
+    const bg = parseColorToRgb(style.backgroundColor);
+    if (bg && bg.a > 0.02) {
+      const luminance = getRelativeLuminance(bg);
+      luminanceSamples.push(luminance);
+      hints.push(`bg=${style.backgroundColor};lum=${luminance.toFixed(3)};fg=${style.color}`);
+    }
+  }
+
+  if (luminanceSamples.length > 0) {
+    const sorted = luminanceSamples.slice().sort((a, b) => a - b);
+    const midpoint = sorted[Math.floor(sorted.length / 2)];
+    if (midpoint >= 0.58) {
+      return { mode: 'light', source: 'site-computed', rawHints: hints };
+    }
+    if (midpoint <= 0.42) {
+      return { mode: 'dark', source: 'site-computed', rawHints: hints };
+    }
+  }
+
+  return { mode: null, source: 'none', rawHints: hints };
+}
+
 function getSystemThemeMode() {
   return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
 }
@@ -212,10 +278,17 @@ function applyThemeMode(mode, source, rawHints) {
 function syncExtensionTheme() {
   const site = detectNotebookThemeFromDom();
   if (site.mode) {
-    applyThemeMode(site.mode, site.source, site.rawHints);
+    applyThemeMode(site.mode, 'site-matched', site.rawHints);
     return;
   }
-  applyThemeMode(getSystemThemeMode(), 'system-fallback', site.rawHints);
+
+  const computed = inferThemeFromComputedStyles();
+  if (computed.mode) {
+    applyThemeMode(computed.mode, computed.source, computed.rawHints);
+    return;
+  }
+
+  applyThemeMode(getSystemThemeMode(), 'system-fallback', [...site.rawHints, ...computed.rawHints]);
 }
 
 /* ── Utilities ─────────────────────────────────────────────────────────── */
