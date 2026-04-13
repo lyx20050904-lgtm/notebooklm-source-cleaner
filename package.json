@@ -1,0 +1,27 @@
+{
+  "name": "notebooklm-source-cleaner",
+  "version": "1.0.0",
+  "description": "> 为 Google NotebookLM 来源列表注入**批量选择与一键删除**功能的 Chrome 浏览器插件（Manifest V3）   > 深度融合 Material Design 3 界面，静默无痕，告别逐条手动点击。",
+  "main": "content.js",
+  "directories": {
+    "doc": "docs"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/lyx20050904-lgtm/notebooklm-source-cleaner.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/lyx20050904-lgtm/notebooklm-source-cleaner/issues"
+  },
+  "homepage": "https://github.com/lyx20050904-lgtm/notebooklm-source-cleaner#readme",
+  "devDependencies": {
+    "jsdom": "^24.1.3"
+  }
+}

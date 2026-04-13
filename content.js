@@ -18,6 +18,130 @@ const SELECTORS = {
   ADD_SOURCE_AREA:  'button.add-source-button',
 };
 
+const LOCALES = {
+  en: {
+    preparing: 'Preparing...',
+    cleaningProgress: 'Cleaning... ({current}/{total})',
+    selectedCount: 'Selected {count}',
+    exitBulk: 'Exit Bulk',
+    bulkSelect: 'Bulk Select',
+    deleteSelected: 'Delete Selected',
+    successDeleted: 'Success: deleted {count} items',
+    confirmDeleteTokens: ['delete'],
+  },
+  'zh-CN': {
+    preparing: '准备中...',
+    cleaningProgress: '正在清理... ({current}/{total})',
+    selectedCount: '已选 {count} 项',
+    exitBulk: '退出批量',
+    bulkSelect: '批量选择',
+    deleteSelected: '删除选中',
+    successDeleted: '成功删除 {count} 条',
+    confirmDeleteTokens: ['删除', 'delete'],
+  },
+  'zh-TW': {
+    preparing: '準備中...',
+    cleaningProgress: '正在清理... ({current}/{total})',
+    selectedCount: '已選 {count} 項',
+    exitBulk: '退出批次',
+    bulkSelect: '批次選擇',
+    deleteSelected: '刪除選中',
+    successDeleted: '成功刪除 {count} 筆',
+    confirmDeleteTokens: ['刪除', '删除', 'delete'],
+  },
+  ja: {
+    preparing: '準備中...',
+    cleaningProgress: '削除中... ({current}/{total})',
+    selectedCount: '{count} 件を選択',
+    exitBulk: '一括選択を終了',
+    bulkSelect: '一括選択',
+    deleteSelected: '選択を削除',
+    successDeleted: '{count} 件を削除しました',
+    confirmDeleteTokens: ['削除', 'delete'],
+  },
+  es: {
+    preparing: 'Preparando...',
+    cleaningProgress: 'Limpiando... ({current}/{total})',
+    selectedCount: '{count} seleccionados',
+    exitBulk: 'Salir del modo masivo',
+    bulkSelect: 'Seleccion masiva',
+    deleteSelected: 'Eliminar seleccionados',
+    successDeleted: 'Eliminados {count} elementos',
+    confirmDeleteTokens: ['eliminar', 'delete'],
+  },
+};
+
+function detectLocale() {
+  const preferred = [...(navigator.languages || []), navigator.language, 'en'].filter(Boolean);
+  for (const raw of preferred) {
+    const normalized = String(raw).trim();
+    if (LOCALES[normalized]) return normalized;
+    const base = normalized.split('-')[0];
+    if (LOCALES[base]) return base;
+    if (base === 'zh') return 'zh-CN';
+  }
+  return 'en';
+}
+
+const ACTIVE_LOCALE = detectLocale();
+
+function t(key, params) {
+  const dict = LOCALES[ACTIVE_LOCALE] || LOCALES.en;
+  const fallback = LOCALES.en;
+  let template = dict[key] ?? fallback[key] ?? key;
+  if (params && typeof template === 'string') {
+    Object.entries(params).forEach(([k, v]) => {
+      template = template.replace(new RegExp('\\{' + k + '\\}', 'g'), String(v));
+    });
+  }
+  return template;
+}
+
+function getDeleteTokens() {
+  const dict = LOCALES[ACTIVE_LOCALE] || LOCALES.en;
+  const tokenList = Array.isArray(dict.confirmDeleteTokens) ? dict.confirmDeleteTokens : [];
+  return new Set(
+    [...tokenList, ...LOCALES.en.confirmDeleteTokens]
+      .map((token) => token.replace(/\s+/g, '').toLowerCase())
+  );
+}
+
+const CONFIRM_DELETE_TOKENS = getDeleteTokens();
+
+const FAILURE_TYPES = {
+  EVENT_CONFLICT: 'EVENT_CONFLICT',
+  SELECTOR_MISS: 'SELECTOR_MISS',
+  DIALOG_TIMEOUT: 'DIALOG_TIMEOUT',
+  ROUTE_REMOUNT_FAIL: 'ROUTE_REMOUNT_FAIL',
+};
+
+const DIAG = {
+  debugEnabled: false,
+  failures: [],
+  eventInterceptions: {
+    pointerdown: 0,
+    mousedown: 0,
+    mouseup: 0,
+    click: 0,
+  },
+};
+
+function recordFailure(type, message, extra) {
+  const entry = {
+    ts: new Date().toISOString(),
+    type,
+    message,
+    extra: extra || null,
+  };
+  DIAG.failures.push(entry);
+  if (DIAG.failures.length > 50) {
+    DIAG.failures.shift();
+  }
+  if (DIAG.debugEnabled) {
+    console.warn('[NLM Cleaner][Failure]', entry);
+  }
+}
+
 /* ── Utilities ─────────────────────────────────────────────────────────── */
 
 function getSidebar() {
@@ -77,7 +201,7 @@ async function confirmDeleteDialog() {
         // 清洗文本：去除所有空白字符（换行、制表符、空格）
         const cleanText = btn.textContent.replace(/\s+/g, '').toLowerCase();
 
-        if (cleanText === '删除' || cleanText === 'delete') {
+        if (CONFIRM_DELETE_TOKENS.has(cleanText)) {
           // 执行点击
           btn.click();
           if (typeof simulateClick === 'function') {
@@ -98,6 +222,11 @@ async function confirmDeleteDialog() {
     await new Promise(resolve => setTimeout(resolve, pollInterval));
   }
 
+  recordFailure(
+    FAILURE_TYPES.DIALOG_TIMEOUT,
+    '确认按钮查找超时',
+    { pollInterval, maxRetries }
+  );
   console.warn('[NLM Cleaner] 确认按钮查找超时。');
   return false;
 }
@@ -119,7 +248,7 @@ function mountLoadingOverlay(total) {
 
   const progress = document.createElement('div');
   progress.className = 'nlm-loading-progress';
-  progress.textContent = '\u51c6\u5907\u4e2d...';
+  progress.textContent = t('preparing');
   overlay.appendChild(progress);
 
   overlayProgressEl = progress;
@@ -130,8 +259,7 @@ function mountLoadingOverlay(total) {
 
 function updateOverlayProgress(current, total) {
   if (overlayProgressEl) {
-    overlayProgressEl.textContent =
-      '\u6b63\u5728\u6e05\u7406... (' + current + '/' + total + ')';
+    overlayProgressEl.textContent = t('cleaningProgress', { current, total });
   }
 }
 
@@ -149,6 +277,11 @@ async function deleteSourceItem(sourceItem) {
   // Step 1: exact selector only — no heuristic fallbacks
   const menuBtn = sourceItem.querySelector(SELECTORS.MENU_BTN);
   if (!menuBtn) {
+    recordFailure(
+      FAILURE_TYPES.SELECTOR_MISS,
+      '未找到来源菜单按钮',
+      { selector: SELECTORS.MENU_BTN }
+    );
     console.warn('[NLM Cleaner] Menu button not found:', SELECTORS.MENU_BTN);
     return false;
   }
@@ -164,6 +297,11 @@ async function deleteSourceItem(sourceItem) {
       3000
     );
   } catch (e) {
+    recordFailure(
+      FAILURE_TYPES.SELECTOR_MISS,
+      '未找到删除菜单项',
+      { selector: SELECTORS.DELETE_MENU_ITEM }
+    );
     console.warn('[NLM Cleaner] Delete menu item not found — pressing Escape');
     document.dispatchEvent(
       new KeyboardEvent('keydown', { key: 'Escape', keyCode: 27, bubbles: true })
@@ -202,7 +340,7 @@ function updateBulkUI() {
   const checked = document.querySelectorAll('.nlm-source-checkbox:checked');
   selectedCount = checked.length;
   countLabel.textContent =
-    selectedCount > 0 ? '\u5df2\u9009 ' + selectedCount + ' \u9879' : '';
+    selectedCount > 0 ? t('selectedCount', { count: selectedCount }) : '';
   deleteBtn.disabled = selectedCount === 0;
 }
 
@@ -212,10 +350,16 @@ function injectCheckbox(sourceItem) {
   cb.type = 'checkbox';
   cb.className = 'nlm-source-checkbox';
 
-  // 阻止click事件冒泡，防止触发NotebookLM原生行为
+  // 仅阻断冒泡，不阻止默认勾选行为
   cb.addEventListener('click', (event) => {
     event.stopPropagation();
-    event.preventDefault();
+  });
+
+  // 兜底拦截早于 click 的链路，避免宿主页在 down 阶段触发详情跳转
+  ['pointerdown', 'mousedown', 'mouseup'].forEach((type) => {
+    cb.addEventListener(type, (event) => {
+      event.stopPropagation();
+    });
   });
 
   // 保持原有的change事件监听器
@@ -240,7 +384,7 @@ function toggleBulkMode() {
     if (toggleBtn) {
       toggleBtn.textContent = '';
       toggleBtn.appendChild(createMaterialIcon('close'));
-      toggleBtn.appendChild(document.createTextNode('\u9000\u51fa\u6279\u91cf'));
+      toggleBtn.appendChild(document.createTextNode(t('exitBulk')));
     }
     if (deleteBtn) deleteBtn.style.display = 'inline-flex';
     if (countLabel) countLabel.style.display = 'inline';
@@ -251,7 +395,7 @@ function toggleBulkMode() {
     if (toggleBtn) {
       toggleBtn.textContent = '';
       toggleBtn.appendChild(createMaterialIcon('checklist'));
-      toggleBtn.appendChild(document.createTextNode('\u6279\u91cf\u9009\u62e9'));
+      toggleBtn.appendChild(document.createTextNode(t('bulkSelect')));
     }
     if (deleteBtn) deleteBtn.style.display = 'none';
     if (countLabel) countLabel.style.display = 'none';
@@ -289,7 +433,7 @@ async function executeBulkDelete() {
     // Guaranteed cleanup — page will never stay permanently blocked
     document.body.classList.remove('nlm-is-deleting');
     dismissLoadingOverlay();
-    showToast('\u2705 \u6210\u529f\u5220\u9664 ' + successCount + ' \u6761', 2500);
+    showToast(t('successDeleted', { count: successCount }), 2500);
     if (isBulkMode) toggleBulkMode();
     if (toggleBtn) toggleBtn.disabled = false;
   }
@@ -319,7 +463,7 @@ function createToolbarDOM() {
   toggleBtn.style.display = 'inline-flex';
   toggleBtn.style.alignItems = 'center';
   toggleBtn.appendChild(createMaterialIcon('checklist'));
-  toggleBtn.appendChild(document.createTextNode('\u6279\u91cf\u9009\u62e9'));
+  toggleBtn.appendChild(document.createTextNode(t('bulkSelect')));
   toggleBtn.addEventListener('click', toggleBulkMode);
 
   const countLabel = document.createElement('span');
@@ -332,7 +476,7 @@ function createToolbarDOM() {
   deleteBtn.style.alignItems = 'center';
   deleteBtn.disabled = true;
   deleteBtn.appendChild(createMaterialIcon('delete'));
-  deleteBtn.appendChild(document.createTextNode('\u5220\u9664\u9009\u4e2d'));
+  deleteBtn.appendChild(document.createTextNode(t('deleteSelected')));
   deleteBtn.addEventListener('click', executeBulkDelete);
 
   toolbar.appendChild(toggleBtn);
@@ -347,6 +491,11 @@ function injectBulkToolbar() {
   if (document.getElementById('nlm-bulk-toolbar')) return;
   const sidebar = getSidebar();
   if (!sidebar) {
+    recordFailure(
+      FAILURE_TYPES.SELECTOR_MISS,
+      '工具栏注入失败：未找到侧边栏',
+      { selector: SELECTORS.SIDEBAR }
+    );
     console.warn('[NLM Cleaner] Toolbar injection failed: sidebar not found');
     return;
   }
@@ -435,6 +584,11 @@ async function attemptMount() {
       15000
     );
   } catch (e) {
+    recordFailure(
+      FAILURE_TYPES.ROUTE_REMOUNT_FAIL,
+      'Sidebar 在 15s 内未出现，重挂失败',
+      { selector: SELECTORS.SIDEBAR }
+    );
     console.warn('[NLM Cleaner] Sidebar not found within 15s — run nlmDebug()');
     window.nlmDebug?.();
     return;
@@ -469,27 +623,43 @@ window.addEventListener('popstate', () => {
   if (isNotebookUrl(newUrl)) debouncedMount();
 });
 
-/* ── 事件委托：全局点击拦截（捕获阶段） ────────────────────────────────────── */
+/* ── 事件拦截模块（防误跳转） ─────────────────────────────────────────────── */
 
-// 在捕获阶段监听全局点击事件，拦截Checkbox点击并阻止事件冒泡
-document.addEventListener('click', function(event) {
-  // 检查被点击的元素是否是我们目标 Checkbox（或是其内部元素）
-  const checkbox = event.target.closest('.nlm-source-checkbox');
+function interceptCheckboxEvent(event) {
+  const target = event.target;
+  if (!(target instanceof Element)) return;
+  const checkbox = target.closest('.nlm-source-checkbox');
+  if (!checkbox) return;
 
-  if (checkbox) {
-    // 关键：阻止事件向上冒泡，防止父容器触发 preventDefault 或打开源文档的逻辑
-    event.stopPropagation();
-
-    // 可选：如果原生行为依然被框架深层拦截，可以手动触发状态切换
-    // checkbox.checked = !checkbox.checked;
-    // checkbox.dispatchEvent(new Event('change', { bubbles: true }));
+  if (event.type in DIAG.eventInterceptions) {
+    DIAG.eventInterceptions[event.type]++;
   }
-}, true); // 设置为 true 使用事件捕获阶段，确保在父元素响应前拦截
+
+  // 捕获阶段尽早阻断宿主页事件链，避免导航逻辑抢占
+  event.stopPropagation();
+  if (typeof event.stopImmediatePropagation === 'function') {
+    event.stopImmediatePropagation();
+  }
+
+  // down 阶段阻断默认行为，避免父级/宿主页触发预导航动作
+  if (event.type === 'pointerdown' || event.type === 'mousedown') {
+    event.preventDefault();
+  }
+}
+
+const INTERCEPT_EVENT_TYPES = ['pointerdown', 'mousedown', 'mouseup', 'click'];
+
+function setupCheckboxInterception() {
+  INTERCEPT_EVENT_TYPES.forEach((type) => {
+    document.addEventListener(type, interceptCheckboxEvent, true);
+  });
+}
 
 /* ── Diagnostics (window.nlmDebug) ────────────────────────────────────── */
 
 window.nlmDebug = function () {
   console.group('[NLM Cleaner] v4 Diagnostic');
+  const rootStyles = getComputedStyle(document.documentElement);
   console.log('URL:', location.href, '| notebook:', isNotebookUrl(location.href), '| mounted:', isPluginMounted);
   const sidebar = getSidebar();
   if (sidebar) {
@@ -504,16 +674,33 @@ window.nlmDebug = function () {
       console.log('  section[' + i + ']', el.className)
     );
   }
+  console.log('Theme tokens:', {
+    textPrimary: rootStyles.getPropertyValue('--ext-text-primary').trim(),
+    textMuted: rootStyles.getPropertyValue('--ext-text-muted').trim(),
+    bgIdle: rootStyles.getPropertyValue('--ext-bg-idle').trim(),
+  });
+  console.log('Event interception count:', DIAG.eventInterceptions);
+  console.log('Recent failures:', DIAG.failures);
   console.log('CDK overlay:', document.querySelector('.cdk-overlay-container') || 'not found');
   console.log('DELETE_MENU_ITEM (if open):', document.querySelector(SELECTORS.DELETE_MENU_ITEM) || 'not visible');
   console.groupEnd();
   return 'Done';
 };
 
+window.nlmSetDebug = function (enabled) {
+  DIAG.debugEnabled = !!enabled;
+  return DIAG.debugEnabled;
+};
+
+window.nlmGetFailures = function () {
+  return [...DIAG.failures];
+};
+
 /* ── Init ──────────────────────────────────────────────────────────────── */
 
 function init() {
   console.log('[NLM Cleaner] v4 \u2014 started');
+  setupCheckboxInterception();
   globalGuardian.observe(document.body, { childList: true, subtree: true });
   if (isNotebookUrl(location.href)) debouncedMount(500);
 }
