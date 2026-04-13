@@ -37,6 +37,37 @@
   }
 }
 
+/* ── NotebookLM 站内主题优先（由 content.js 注入 data-nlm-ext-theme） ── */
+:root[data-nlm-ext-theme="dark"] {
+  --ext-text-primary:          rgba(255, 255, 255, 0.87);
+  --ext-text-muted:            rgba(255, 255, 255, 0.40);
+  --ext-bg-idle:               rgba(255, 255, 255, 0.08);
+  --ext-bg-hover:              rgba(255, 255, 255, 0.12);
+  --ext-btn-border:            transparent;
+  --ext-checkbox-border:       rgba(255, 255, 255, 0.30);
+  --ext-checkbox-border-hover: rgba(255, 255, 255, 0.55);
+  --ext-danger-text:           #f28b82;
+  --ext-danger-bg:             rgba(242, 139, 130, 0.15);
+  --ext-danger-bg-hover:       rgba(242, 139, 130, 0.25);
+  --ext-disabled-text:         rgba(255, 255, 255, 0.30);
+  --ext-disabled-bg:           rgba(255, 255, 255, 0.04);
+}
+
+:root[data-nlm-ext-theme="light"] {
+  --ext-text-primary:          #444746;
+  --ext-text-muted:            rgba(0, 0, 0, 0.50);
+  --ext-bg-idle:               rgba(0, 0, 0, 0.04);
+  --ext-bg-hover:              rgba(0, 0, 0, 0.08);
+  --ext-btn-border:            rgba(0, 0, 0, 0.12);
+  --ext-checkbox-border:       rgba(0, 0, 0, 0.30);
+  --ext-checkbox-border-hover: rgba(0, 0, 0, 0.55);
+  --ext-danger-text:           #c5221f;
+  --ext-danger-bg:             rgba(197, 34, 31, 0.10);
+  --ext-danger-bg-hover:       rgba(197, 34, 31, 0.18);
+  --ext-disabled-text:         rgba(0, 0, 0, 0.30);
+  --ext-disabled-bg:           rgba(0, 0, 0, 0.04);
+}
+
 /* ── 批量工具条容器 ────────────────────────────────────────────── */
 #nlm-bulk-toolbar {
   display: flex;

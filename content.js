@@ -122,6 +122,11 @@ const FAILURE_TYPES = {
 const DIAG = {
   debugEnabled: false,
   failures: [],
+  theme: {
+    mode: 'unknown',
+    source: 'unknown',
+    rawHints: [],
+  },
   eventInterceptions: {
     pointerdown: 0,
     mousedown: 0,
@@ -144,6 +149,73 @@ function recordFailure(type, message, extra) {
   if (DIAG.debugEnabled) {
     console.warn('[NLM Cleaner][Failure]', entry);
   }
+}
+
+/* ── Theme Sync (NotebookLM first, system fallback) ──────────────────── */
+
+const THEME_ATTR_MODE = 'data-nlm-ext-theme';
+const THEME_ATTR_SOURCE = 'data-nlm-ext-theme-source';
+
+function normalizeThemeText(text) {
+  return String(text || '').trim().toLowerCase();
+}
+
+function detectNotebookThemeFromDom() {
+  const candidates = [
+    document.documentElement,
+    document.body,
+    document.querySelector('main'),
+    document.querySelector('[role="main"]'),
+    document.querySelector('app-root'),
+  ].filter(Boolean);
+
+  const hints = [];
+  for (const el of candidates) {
+    const cls = normalizeThemeText(el.className);
+    const attrs = [
+      el.getAttribute('data-theme'),
+      el.getAttribute('theme'),
+      el.getAttribute('color-scheme'),
+      el.getAttribute('data-color-scheme'),
+      el.getAttribute('style'),
+    ].map(normalizeThemeText).filter(Boolean).join(' ');
+    const bag = `${cls} ${attrs}`;
+    if (!bag) continue;
+    hints.push(bag.slice(0, 200));
+
+    if (/\b(light|day|sun)\b|theme-light|is-light|mdc-theme--light/.test(bag)) {
+      return { mode: 'light', source: 'site', rawHints: hints };
+    }
+    if (/\b(dark|night|moon)\b|theme-dark|is-dark|mdc-theme--dark/.test(bag)) {
+      return { mode: 'dark', source: 'site', rawHints: hints };
+    }
+  }
+
+  return { mode: null, source: 'none', rawHints: hints };
+}
+
+function getSystemThemeMode() {
+  return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+}
+
+function applyThemeMode(mode, source, rawHints) {
+  const root = document.documentElement;
+  root.setAttribute(THEME_ATTR_MODE, mode);
+  root.setAttribute(THEME_ATTR_SOURCE, source);
+  DIAG.theme = {
+    mode,
+    source,
+    rawHints: Array.isArray(rawHints) ? rawHints.slice(0, 5) : [],
+  };
+}
+
+function syncExtensionTheme() {
+  const site = detectNotebookThemeFromDom();
+  if (site.mode) {
+    applyThemeMode(site.mode, site.source, site.rawHints);
+    return;
+  }
+  applyThemeMode(getSystemThemeMode(), 'system-fallback', site.rawHints);
 }
 
 /* ── Utilities ─────────────────────────────────────────────────────────── */
@@ -907,8 +979,11 @@ function scanAndInject() {
 let currentUrl = location.href;
 let isPluginMounted = false;
 let innerObserver = null;
+let themeObserver = null;
 let mountDebounceTimer = null;
 let scanDebounceTimer = null;
+let systemThemeMedia = null;
+let systemThemeListener = null;
 
 function isNotebookUrl(url) {
   return url.includes('/notebook/');
@@ -941,9 +1016,49 @@ function startInnerObserver(listContainer) {
   console.log('[NLM Cleaner] Inner Observer started');
 }
 
+function startThemeObserver() {
+  if (themeObserver) {
+    themeObserver.disconnect();
+    themeObserver = null;
+  }
+
+  themeObserver = new MutationObserver((mutations) => {
+    for (const mutation of mutations) {
+      if (mutation.type === 'attributes') {
+        syncExtensionTheme();
+        return;
+      }
+    }
+  });
+
+  [document.documentElement, document.body].filter(Boolean).forEach((el) => {
+    themeObserver.observe(el, {
+      attributes: true,
+      attributeFilter: ['class', 'style', 'data-theme', 'theme', 'color-scheme', 'data-color-scheme'],
+    });
+  });
+
+  if (!systemThemeMedia) {
+    systemThemeMedia = window.matchMedia('(prefers-color-scheme: light)');
+  }
+  if (systemThemeListener) {
+    systemThemeMedia.removeEventListener('change', systemThemeListener);
+  }
+  systemThemeListener = () => syncExtensionTheme();
+  systemThemeMedia.addEventListener('change', systemThemeListener);
+
+  syncExtensionTheme();
+}
+
 function teardown() {
   innerObserver?.disconnect();
   innerObserver = null;
+  themeObserver?.disconnect();
+  themeObserver = null;
+  if (systemThemeMedia && systemThemeListener) {
+    systemThemeMedia.removeEventListener('change', systemThemeListener);
+  }
+  systemThemeListener = null;
   clearTimeout(mountDebounceTimer);
   clearTimeout(scanDebounceTimer);
   document.getElementById('nlm-bulk-toolbar')?.remove();
@@ -953,6 +1068,8 @@ function teardown() {
   selectedCount = 0;
   bulkToolbar = null;
   isPluginMounted = false;
+  document.documentElement.removeAttribute(THEME_ATTR_MODE);
+  document.documentElement.removeAttribute(THEME_ATTR_SOURCE);
   console.log('[NLM Cleaner] Teardown complete');
 }
 
@@ -978,8 +1095,10 @@ async function attemptMount() {
   }
 
   isPluginMounted = true;
+  syncExtensionTheme();
   scanAndInject();
   startInnerObserver(listContainer);
+  startThemeObserver();
   console.log('[NLM Cleaner] Mounted');
 }
 
@@ -1062,6 +1181,11 @@ window.nlmDebug = function () {
     textMuted: rootStyles.getPropertyValue('--ext-text-muted').trim(),
     bgIdle: rootStyles.getPropertyValue('--ext-bg-idle').trim(),
   });
+  console.log('Theme source:', {
+    mode: document.documentElement.getAttribute(THEME_ATTR_MODE) || 'unset',
+    source: document.documentElement.getAttribute(THEME_ATTR_SOURCE) || 'unset',
+    diag: DIAG.theme,
+  });
   console.log('Event interception count:', DIAG.eventInterceptions);
   console.log('Recent failures:', DIAG.failures);
   console.log('CDK overlay:', document.querySelector('.cdk-overlay-container') || 'not found');
@@ -1083,6 +1207,8 @@ window.nlmGetFailures = function () {
 
 function init() {
   console.log('[NLM Cleaner] v4 \u2014 started');
+  syncExtensionTheme();
+  startThemeObserver();
   setupCheckboxInterception();
   globalGuardian.observe(document.body, { childList: true, subtree: true });
   if (isNotebookUrl(location.href)) debouncedMount(500);
