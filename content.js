@@ -185,10 +185,18 @@ function simulateClick(el) {
 
 function isElementVisible(el) {
   if (!(el instanceof Element)) return false;
-  const rect = el.getBoundingClientRect();
-  if (rect.width === 0 && rect.height === 0) return false;
   const style = getComputedStyle(el);
-  return style.display !== 'none' && style.visibility !== 'hidden' && style.opacity !== '0';
+  return style.display !== 'none' && style.visibility !== 'hidden';
+}
+
+function isButtonActionable(btn) {
+  if (!(btn instanceof HTMLButtonElement)) return false;
+  if (btn.disabled || btn.getAttribute('aria-disabled') === 'true') return false;
+  const style = getComputedStyle(btn);
+  if (style.display === 'none' || style.visibility === 'hidden' || style.pointerEvents === 'none') {
+    return false;
+  }
+  return true;
 }
 
 function normalizeDialogText(value) {
@@ -214,7 +222,10 @@ async function confirmDeleteDialog() {
     const overlayContainers = document.querySelectorAll(
       '.cdk-overlay-container, .cdk-global-overlay-wrapper, dialog, .mat-mdc-dialog-container, [role="dialog"], mat-dialog-container'
     );
-    const dialogRoots = Array.from(document.querySelectorAll(DIALOG_ROOT_SELECTOR)).filter(isElementVisible);
+    const dialogRoots = Array.from(document.querySelectorAll(DIALOG_ROOT_SELECTOR)).filter((root) => {
+      // 不对根节点做严格“可见性”判定，避免误杀 display: contents / 过渡态容器
+      return root.querySelectorAll('button').length > 0;
+    });
 
     if (i === 0 || i % 10 === 0) {
       diagLog.push(`[轮询${i}] 找到${overlayContainers.length}个overlay容器, ${dialogRoots.length}个dialog根节点`);
@@ -222,7 +233,7 @@ async function confirmDeleteDialog() {
 
     // 优先处理后出现的 dialog（通常为最顶层）
     for (const container of dialogRoots.reverse()) {
-      const buttons = Array.from(container.querySelectorAll('button')).filter(isElementVisible);
+      const buttons = Array.from(container.querySelectorAll('button')).filter(isButtonActionable);
       
       for (const btn of buttons) {
         // 清洗文本：去除所有空白字符（换行、制表符、空格）
@@ -252,19 +263,26 @@ async function confirmDeleteDialog() {
           }
           
           // 执行点击
+          let clicked = false;
           try {
             btn.click();
             diagLog.push(`✓ [轮询${i}] btn.click() 已执行`);
+            clicked = true;
           } catch (e) {
             diagLog.push(`✗ [轮询${i}] btn.click() 失败: ${e.message}`);
           }
-          
+
+          // 仅在原生 click 无效时再降级派发事件，避免重复触发。
           if (typeof simulateClick === 'function') {
+            await new Promise(resolve => setTimeout(resolve, 30));
+            const stillMounted = document.body.contains(btn);
+            if (!clicked || stillMounted) {
             try {
               simulateClick(btn);
               diagLog.push(`✓ [轮询${i}] simulateClick() 已执行`);
             } catch (e) {
               diagLog.push(`✗ [轮询${i}] simulateClick() 失败: ${e.message}`);
+            }
             }
           }
 
@@ -300,7 +318,9 @@ async function confirmDeleteDialog() {
   }
 
   // 超时时的详细诊断
-  const finalContainers = Array.from(document.querySelectorAll(DIALOG_ROOT_SELECTOR)).filter(isElementVisible);
+  const finalContainers = Array.from(document.querySelectorAll(DIALOG_ROOT_SELECTOR)).filter((root) => {
+    return root.querySelectorAll('button').length > 0;
+  });
   const orphanedButtons = finalContainers.flatMap(c =>
     Array.from(c.querySelectorAll('button')).map(b => ({
       text: b.textContent,
